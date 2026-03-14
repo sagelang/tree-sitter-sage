@@ -1,0 +1,17 @@
+# Build artifacts
+/build/
+/bindings/
+
+# Node
+node_modules/
+package-lock.json
+
+# Build artifacts (native)
+*.wasm
+*.so
+*.dylib
+*.dll
+*.o
+*.a
+
+# Note: We track src/ because it's needed for consuming the grammar
