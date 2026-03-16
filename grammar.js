@@ -1,7 +1,8 @@
 /// <reference types="tree-sitter-cli/dsl" />
 // @ts-check
 
-// Simplified grammar focused on syntax highlighting rather than perfect parsing
+// Sage grammar for syntax highlighting
+// Updated for RFC-0018 keyword renames and RFC-0019 improvements
 
 module.exports = grammar({
   name: 'sage',
@@ -19,6 +20,7 @@ module.exports = grammar({
     [$._type, $.function_type],
     [$.match_statement, $.match_expression],
     [$.if_statement, $.if_expression],
+    [$.block, $.map_literal],
   ],
 
   rules: {
@@ -29,7 +31,11 @@ module.exports = grammar({
       $.function_declaration,
       $.record_declaration,
       $.enum_declaration,
+      $.const_declaration,
       $.tool_declaration,
+      $.mod_declaration,
+      $.use_declaration,
+      $.test_block,
       $.run_statement,
     ),
 
@@ -37,33 +43,66 @@ module.exports = grammar({
     line_comment: $ => seq('//', /.*/),
     block_comment: $ => seq('/*', /[^*]*\*+([^/*][^*]*\*+)*/, '/'),
 
+    // Module system
+    mod_declaration: $ => seq('mod', field('name', $.identifier), optional(';')),
+
+    use_declaration: $ => seq(
+      'use',
+      $.use_path,
+      optional(';'),
+    ),
+
+    use_path: $ => seq(
+      $.identifier,
+      repeat(seq('::', choice(
+        $.identifier,
+        $.use_group,
+        '*',
+      ))),
+      optional(seq('as', $.identifier)),
+    ),
+
+    use_group: $ => seq('{', commaSep1($.use_path), '}'),
+
+    // Const declaration
+    const_declaration: $ => seq(
+      optional('pub'),
+      'const',
+      field('name', $.identifier),
+      ':',
+      field('type', $._type),
+      '=',
+      $._expression,
+      optional(';'),
+    ),
+
     // Agent
     agent_declaration: $ => seq(
       optional('pub'),
       'agent',
       field('name', $.identifier),
       optional($.generic_params),
+      optional($.receives_clause),
       $.agent_body,
     ),
+
+    receives_clause: $ => seq('receives', $._type),
 
     agent_body: $ => seq('{', repeat($.agent_member), '}'),
 
     agent_member: $ => choice(
-      $.use_clause,
-      $.belief_declaration,
+      $.tool_use_clause,
+      $.field_declaration,
       $.handler_declaration,
     ),
 
-    use_clause: $ => seq('use', commaSep1($.identifier)),
+    tool_use_clause: $ => seq('use', commaSep1($.identifier)),
 
-    belief_declaration: $ => seq(
-      optional('pub'),
-      'belief',
+    field_declaration: $ => seq(
       field('name', $.identifier),
       ':',
       field('type', $._type),
-      '=',
-      $._expression,
+      optional(','),
     ),
 
     handler_declaration: $ => seq(
@@ -75,10 +114,18 @@ module.exports = grammar({
     handler_event: $ => choice(
       'start',
       'stop',
-      seq('message', '(', optional($.identifier), ')'),
-      seq('interval', '(', $._expression, ')'),
-      seq('change', '(', $.identifier, ')'),
+      seq('error', '(', optional($.identifier), ')'),
     ),
+
+    // Test block
+    test_block: $ => seq(
+      optional($.test_attribute),
+      'test',
+      field('name', $.string),
+      $.block,
+    ),
+
+    test_attribute: $ => seq('@', $.identifier),
 
     // Function
     function_declaration: $ => seq(
@@ -88,6 +135,7 @@ module.exports = grammar({
       optional($.generic_params),
       $.parameter_list,
       optional(seq('->', field('return_type', $._type))),
+      optional('fails'),
       $.block,
     ),
 
@@ -158,7 +206,7 @@ module.exports = grammar({
     ),
 
     // Run
-    run_statement: $ => seq('run', $._expression, optional(';')),
+    run_statement: $ => seq('run', $.identifier, optional(';')),
 
     // Statements
     block: $ => seq('{', repeat($._statement), '}'),
@@ -166,28 +214,37 @@ module.exports = grammar({
     _statement: $ => choice(
       $.let_statement,
       $.return_statement,
-      $.emit_statement,
+      $.yield_statement,
       $.if_statement,
       $.for_statement,
       $.while_statement,
+      $.loop_statement,
       $.match_statement,
       $.break_statement,
       $.continue_statement,
+      $.mock_divine_statement,
+      $.assert_statement,
       $.expression_statement,
     ),
 
     let_statement: $ => seq(
       'let',
       optional('mut'),
-      field('name', $.identifier),
+      choice(
+        field('name', $.identifier),
+        $.tuple_pattern,
+      ),
       optional(seq(':', field('type', $._type))),
       '=',
       $._expression,
+      optional(';'),
     ),
 
-    return_statement: $ => prec.right(seq('return', optional($._expression))),
+    tuple_pattern: $ => seq('(', commaSep1($.identifier), ')'),
 
-    emit_statement: $ => seq('emit', '(', $._expression, ')'),
+    return_statement: $ => prec.right(seq('return', optional($._expression), optional(';'))),
+
+    yield_statement: $ => seq('yield', '(', $._expression, ')', optional(';')),
 
     if_statement: $ => prec.right(seq(
       'if',
@@ -196,9 +253,17 @@ module.exports = grammar({
       optional(seq('else', choice($.block, $.if_statement))),
     )),
 
-    for_statement: $ => seq('for', $.identifier, 'in', $._expression, $.block),
+    for_statement: $ => seq(
+      'for',
+      choice($.identifier, $.tuple_pattern),
+      'in',
+      $._expression,
+      $.block,
+    ),
 
     while_statement: $ => seq('while', $._expression, $.block),
+
+    loop_statement: $ => seq('loop', $.block),
 
     match_statement: $ => seq(
       'match',
@@ -230,12 +295,46 @@ module.exports = grammar({
       seq($.identifier, ':', $.pattern),
     ),
 
-    break_statement: $ => 'break',
-    continue_statement: $ => 'continue',
+    break_statement: $ => seq('break', optional(';')),
+    continue_statement: $ => seq('continue', optional(';')),
+
+    // Mock divine for tests
+    mock_divine_statement: $ => seq(
+      'mock',
+      'divine',
+      '->',
+      $._expression,
+      optional(';'),
+    ),
+
+    // Assertions for tests
+    assert_statement: $ => seq(
+      choice(
+        'assert',
+        'assert_eq',
+        'assert_neq',
+        'assert_gt',
+        'assert_lt',
+        'assert_gte',
+        'assert_lte',
+        'assert_contains',
+        'assert_starts_with',
+        'assert_ends_with',
+        'assert_empty',
+        'assert_not_empty',
+        'assert_true',
+        'assert_false',
+        'assert_fails',
+      ),
+      '(',
+      commaSep($._expression),
+      ')',
+      optional(';'),
+    ),
 
     expression_statement: $ => seq($._expression, optional(';')),
 
-    // Expressions - simplified
+    // Expressions
     _expression: $ => choice(
       $.binary_expression,
       $.unary_expression,
@@ -243,9 +342,13 @@ module.exports = grammar({
       $.method_call_expression,
       $.field_expression,
       $.index_expression,
-      $.infer_expression,
+      $.divine_expression,
+      $.summon_expression,
+      $.send_expression,
+      $.receive_expression,
       $.closure_expression,
       $.try_expression,
+      $.try_catch_expression,
       $.await_expression,
       $.if_expression,
       $.match_expression,
@@ -274,69 +377,106 @@ module.exports = grammar({
       $.string,
       $.interpolated_string,
       $.list_literal,
+      $.map_literal,
+      $.tuple_literal,
       $.record_literal,
       $.parenthesized_expression,
+      $.self,
     ),
+
+    self: $ => 'self',
 
     binary_expression: $ => choice(
       prec.left(1, seq($._expression, 'or', $._expression)),
       prec.left(2, seq($._expression, 'and', $._expression)),
       prec.left(3, seq($._expression, choice('==', '!='), $._expression)),
       prec.left(4, seq($._expression, choice('<', '>', '<=', '>='), $._expression)),
-      prec.left(5, seq($._expression, choice('+', '-'), $._expression)),
-      prec.left(6, seq($._expression, choice('*', '/', '%'), $._expression)),
+      prec.left(5, seq($._expression, '++', $._expression)),
+      prec.left(6, seq($._expression, choice('+', '-'), $._expression)),
+      prec.left(7, seq($._expression, choice('*', '/', '%'), $._expression)),
       prec.left(1, seq($._expression, choice('=', '+=', '-=', '*=', '/='), $._expression)),
-      prec.right(7, seq($._expression, '??', $._expression)),
+      prec.right(8, seq($._expression, '??', $._expression)),
     ),
 
-    unary_expression: $ => prec(8, choice(
+    unary_expression: $ => prec(9, choice(
       seq('-', $._expression),
       seq('!', $._expression),
     )),
 
-    call_expression: $ => prec.left(10, seq(
-      $._expression,
-      '(',
-      commaSep($._expression),
-      ')',
+    call_expression: $ => prec.left(11, seq(
+      field('function', $._expression),
+      optional($.turbofish),
+      field('arguments', $.argument_list),
     )),
 
-    method_call_expression: $ => prec.left(10, seq(
+    argument_list: $ => seq('(', commaSep($._expression), ')'),
+
+    turbofish: $ => seq('::', '<', commaSep1($._type), '>'),
+
+    method_call_expression: $ => prec.left(11, seq(
+      field('object', $._expression),
+      '.',
+      field('method', $.identifier),
+      field('arguments', $.argument_list),
+    )),
+
+    field_expression: $ => prec.left(11, seq(
       $._expression,
       '.',
-      $.identifier,
-      '(',
-      commaSep($._expression),
-      ')',
+      choice($.identifier, $.integer),
     )),
 
-    field_expression: $ => prec.left(10, seq(
-      $._expression,
-      '.',
-      $.identifier,
-    )),
-
-    index_expression: $ => prec.left(10, seq(
+    index_expression: $ => prec.left(11, seq(
       $._expression,
       '[',
       $._expression,
       ']',
     )),
 
-    try_expression: $ => prec(9, seq('try', $._expression)),
-    await_expression: $ => prec(9, seq('await', $._expression)),
+    try_expression: $ => prec(10, seq('try', $._expression)),
 
-    infer_expression: $ => seq(
-      'infer',
-      optional(seq('<', $._type, '>')),
+    try_catch_expression: $ => prec(11, seq(
+      'try',
+      $._expression,
+      'catch',
+      $.block,
+    )),
+
+    await_expression: $ => prec(10, seq('await', $._expression)),
+
+    divine_expression: $ => seq(
+      'divine',
+      '(',
+      $._expression,
+      ')',
+    ),
+
+    summon_expression: $ => prec.right(seq(
+      'summon',
+      $.identifier,
+      optional($.record_body),
+    )),
+
+    record_body: $ => seq(
       '{',
-      repeat(choice(
-        seq('prompt', ':', $._expression),
-        seq('example', ':', '{', optional(seq('input', ':', $._expression)), 'output', ':', $._expression, '}'),
-        seq('constraint', ':', $._expression),
+      commaSep(choice(
+        $.identifier,
+        seq($.identifier, ':', $._expression),
       )),
+      optional(','),
       '}',
     ),
+
+    send_expression: $ => seq(
+      'send',
+      '(',
+      $._expression,
+      ',',
+      $._expression,
+      ')',
+    ),
+
+    receive_expression: $ => seq('receive', '(', ')'),
 
     closure_expression: $ => seq(
       '|',
@@ -349,15 +489,15 @@ module.exports = grammar({
 
     list_literal: $ => seq('[', commaSep($._expression), optional(','), ']'),
 
+    map_literal: $ => seq('{', commaSep($.map_entry), optional(','), '}'),
+
+    map_entry: $ => seq($._expression, ':', $._expression),
+
+    tuple_literal: $ => seq('(', $._expression, ',', commaSep($._expression), optional(','), ')'),
+
     record_literal: $ => seq(
       $.identifier,
-      '{',
-      commaSep(choice(
-        $.identifier,
-        seq($.identifier, ':', $._expression),
-      )),
-      optional(','),
-      '}',
+      $.record_body,
     ),
 
     // Types
@@ -376,33 +516,37 @@ module.exports = grammar({
     list_type: $ => seq('[', $._type, ']'),
     map_type: $ => seq('{', $._type, ':', $._type, '}'),
     tuple_type: $ => seq('(', $._type, ',', commaSep1($._type), ')'),
-    function_type: $ => seq('fn', '(', commaSep($._type), ')', '->', $._type),
+    function_type: $ => seq('Fn', '(', commaSep($._type), ')', '->', $._type),
 
     // Literals
     literal: $ => choice(
       $.integer,
       $.float,
       $.boolean,
-      'none',
+      'None',
     ),
 
     integer: $ => /\d+/,
     float: $ => /\d+\.\d+/,
     boolean: $ => choice('true', 'false'),
 
-    string: $ => seq('"', repeat(choice(/[^"\\]+/, $.escape_sequence)), '"'),
+    // Single-quoted strings (no interpolation)
+    string: $ => seq("'", repeat(choice(/[^'\\]+/, $.escape_sequence)), "'"),
 
+    // Double-quoted strings (with optional interpolation)
     interpolated_string: $ => seq(
-      'f"',
+      '"',
       repeat(choice(
         /[^"\\{]+/,
         $.escape_sequence,
-        seq('{', $._expression, '}'),
+        $.interpolation,
       )),
       '"',
     ),
 
-    escape_sequence: $ => /\\[nrt"\\{]/,
+    interpolation: $ => seq('{', $._expression, '}'),
+
+    escape_sequence: $ => /\\[nrt"'\\{]/,
 
     identifier: $ => /[a-zA-Z_][a-zA-Z0-9_]*/,
   },

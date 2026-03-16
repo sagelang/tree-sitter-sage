@@ -4,7 +4,7 @@
   (agent_body)
   (match_expression)
   (match_statement)
-  (infer_expression)
+  (divine_expression)
   (list_literal)
   (record_literal)
 ] @indent

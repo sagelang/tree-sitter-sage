@@ -1,83 +1,234 @@
+; Sage syntax highlighting
+; RFC-0019 compliant
+
+; =============================================================================
 ; Comments
+; =============================================================================
+
 (line_comment) @comment
 (block_comment) @comment
 
-; Keywords - agent related
-"agent" @keyword
-"belief" @keyword
-"on" @keyword
-"use" @keyword
+; =============================================================================
+; Keywords
+; =============================================================================
 
-; Keywords - function related
+; Agent keywords
+"agent" @keyword
+"on" @keyword
+"receives" @keyword
+
+; Function keywords
 "fn" @keyword
 "return" @keyword
+"fails" @keyword
 
-; Keywords - type definitions
+; Type definition keywords
 "record" @keyword
 "enum" @keyword
 "tool" @keyword
+"const" @keyword
 
-; Keywords - control flow
-"if" @keyword
-"else" @keyword
-"for" @keyword
-"in" @keyword
-"while" @keyword
-"match" @keyword
+; Module keywords
+"mod" @keyword
+"use" @keyword
+"as" @keyword
+"pub" @keyword
 
-; Keywords - other
+; Variable keywords
 "let" @keyword
 "mut" @keyword
-"run" @keyword
-"emit" @keyword
-"try" @keyword
-"await" @keyword
-"infer" @keyword
-"pub" @keyword
-"and" @keyword
-"or" @keyword
 
+; Agent runtime keywords
+"run" @keyword
+"summon" @keyword
+"yield" @keyword
+"divine" @keyword
+"send" @keyword
+"receive" @keyword
+
+; Control flow keywords
+"if" @keyword.control
+"else" @keyword.control
+"for" @keyword.control
+"in" @keyword.control
+"while" @keyword.control
+"loop" @keyword.control
+"match" @keyword.control
+"break" @keyword.control
+"continue" @keyword.control
+
+; Error handling keywords
+"try" @keyword.control
+"catch" @keyword.control
+"await" @keyword.control
+
+; Testing keywords
+"test" @keyword
+"mock" @keyword
+
+; Logical operators as keywords
+"and" @keyword.operator
+"or" @keyword.operator
+
+; =============================================================================
 ; Handler events
+; =============================================================================
+
 (handler_event) @keyword
 
-; Break and continue
-(break_statement) @keyword
-(continue_statement) @keyword
+; =============================================================================
+; Built-in types
+; =============================================================================
 
+((identifier) @type.builtin
+ (#match? @type.builtin "^(String|Int|Float|Bool|Unit|List|Map|Option|Result|Oracle|Fn)$"))
+
+; =============================================================================
 ; Type annotations
+; =============================================================================
+
 (parameter type: (identifier) @type)
 (record_field type: (identifier) @type)
-(belief_declaration type: (identifier) @type)
+(field_declaration type: (identifier) @type)
 (let_statement type: (identifier) @type)
+(const_declaration type: (identifier) @type)
+(function_declaration return_type: (identifier) @type)
 
 ; Generic types
 (generic_type (identifier) @type)
+(generic_params (identifier) @type)
 
+; =============================================================================
 ; Declaration names
+; =============================================================================
+
+; Type names (agents, records, enums, tools)
 (agent_declaration name: (identifier) @type)
 (record_declaration name: (identifier) @type)
 (enum_declaration name: (identifier) @type)
 (tool_declaration name: (identifier) @type)
+
+; Function names
 (function_declaration name: (identifier) @function)
 (tool_function name: (identifier) @function)
 
+; =============================================================================
 ; Enum variants
-(enum_variant (identifier) @constant)
+; =============================================================================
 
-; Beliefs and fields
-(belief_declaration name: (identifier) @property)
+(enum_variant name: (identifier) @constant)
+
+; =============================================================================
+; Fields and properties
+; =============================================================================
+
+(field_declaration name: (identifier) @property)
 (record_field name: (identifier) @property)
+(field_expression (identifier) @property)
 
+; Map entry keys (when identifier)
+; (map_entry key: (identifier) @property)
+
+; =============================================================================
 ; Parameters
+; =============================================================================
+
 (parameter name: (identifier) @variable.parameter)
+(handler_event (identifier) @variable.parameter)
 
-; Use clause (tool names)
-(use_clause (identifier) @type)
+; =============================================================================
+; Constants
+; =============================================================================
 
-; Variables
+(const_declaration name: (identifier) @constant)
+
+; =============================================================================
+; Built-in values
+; =============================================================================
+
+(boolean) @constant.builtin
+"None" @constant.builtin
+
+; =============================================================================
+; Self
+; =============================================================================
+
+(self) @variable.builtin
+
+; =============================================================================
+; Function calls
+; =============================================================================
+
+; Simple function calls: foo()
+(call_expression
+  function: (identifier) @function.call)
+
+; Method calls: obj.method()
+(method_call_expression
+  method: (identifier) @function.call)
+
+; Built-in functions
+((identifier) @function.builtin
+ (#match? @function.builtin "^(print|str|len|push|pop|map_get|map_set|map_has|map_delete|map_keys|map_values|int_to_str|Some|Ok|Err)$"))
+
+; =============================================================================
+; Assertions (test functions)
+; =============================================================================
+
+[
+  "assert"
+  "assert_eq"
+  "assert_neq"
+  "assert_gt"
+  "assert_lt"
+  "assert_gte"
+  "assert_lte"
+  "assert_contains"
+  "assert_starts_with"
+  "assert_ends_with"
+  "assert_empty"
+  "assert_not_empty"
+  "assert_true"
+  "assert_false"
+  "assert_fails"
+] @function.builtin
+
+; =============================================================================
+; Module paths
+; =============================================================================
+
+(use_path (identifier) @module)
+(mod_declaration name: (identifier) @module)
+
+; =============================================================================
+; Tool use clause
+; =============================================================================
+
+(tool_use_clause (identifier) @type)
+
+; =============================================================================
+; Summon expression (agent type)
+; =============================================================================
+
+(summon_expression (identifier) @type)
+
+; =============================================================================
+; Test names
+; =============================================================================
+
+(test_block name: (string) @string.special)
+(test_attribute (identifier) @attribute)
+
+; =============================================================================
+; Variables (fallback - should be last for identifiers)
+; =============================================================================
+
 (identifier) @variable
 
+; =============================================================================
 ; Operators
+; =============================================================================
+
 "+" @operator
 "-" @operator
 "*" @operator
@@ -93,8 +244,14 @@
 "!" @operator
 "=>" @operator
 "->" @operator
+"++" @operator
+"??" @operator
+"::" @operator
 
+; =============================================================================
 ; Punctuation
+; =============================================================================
+
 "(" @punctuation.bracket
 ")" @punctuation.bracket
 "[" @punctuation.bracket
@@ -105,13 +262,24 @@
 ":" @punctuation.delimiter
 "," @punctuation.delimiter
 "." @punctuation.delimiter
+";" @punctuation.delimiter
 
+; =============================================================================
 ; Literals
+; =============================================================================
+
 (integer) @number
 (float) @number
-(boolean) @constant.builtin
 
+; =============================================================================
 ; Strings
+; =============================================================================
+
 (string) @string
 (interpolated_string) @string
-(escape_sequence) @escape
+(escape_sequence) @string.escape
+
+; String interpolation braces
+(interpolation
+  "{" @punctuation.special
+  "}" @punctuation.special)
